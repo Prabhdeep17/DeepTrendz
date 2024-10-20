@@ -194,9 +194,7 @@ def show_main_interface():
             accuracy = true_positive / len(recommendations) if recommendations else 0
 
             st.markdown("### Evaluation Metrics:")
-            st.write(f"**Precision:** {precision:.2f}")
-            st.write(f"**Recall:** {recall:.2f}")
-            st.write(f"**Accuracy:** {accuracy:.2f}")
+            st.success(f"Precision: {precision:.2f}, Recall: {recall:.2f}, Accuracy: {accuracy:.2f}")
         else:
             st.warning("No recommendations to evaluate.")
 
