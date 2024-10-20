@@ -171,7 +171,7 @@ def show_main_interface():
             return random.sample(list(recommended_products['product_name']), min(num_recommendations, len(recommended_products)))
         else:
             return []
-
+    @st.cache_data
     def get_combined_recommendations():
         content_recommendations = get_content_based_recommendations(st.session_state['buy_history'])
         collaborative_recommendations = get_collaborative_recommendations(st.session_state['buy_history'])
