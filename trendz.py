@@ -6,9 +6,9 @@ from sklearn.metrics.pairwise import linear_kernel
 from sklearn.cluster import KMeans
 import numpy as np
 
-# Load product data from CSV with caching
+# Load product data from CSV with error handling and caching
 @st.cache_data
-def load_product_data(csv_file_path):
+def load_data(csv_file_path):
     products = pd.read_csv(csv_file_path)
     products['about_product'] = products['about_product'].fillna('')
     products['discounted_price'] = products['discounted_price'].str.replace('₹', '').str.replace(',', '').astype(float)
@@ -16,10 +16,9 @@ def load_product_data(csv_file_path):
     products['rating_count'] = pd.to_numeric(products['rating_count'], errors='coerce').fillna(0)
     return products
 
-# Load product data
 csv_file_path = 'products.csv'  # Ensure the CSV file is in the same directory or provide the correct path
 try:
-    products = load_product_data(csv_file_path)
+    products = load_data(csv_file_path)
 except FileNotFoundError:
     st.error("The products.csv file was not found. Please ensure it is in the correct directory.")
     st.stop()
@@ -38,7 +37,7 @@ if 'user_logged_in' not in st.session_state:
 if 'username' not in st.session_state:
     st.session_state['username'] = ''
 if 'true_recommendations' not in st.session_state:
-    st.session_state['true_recommendations'] = []  # To store actual liked products for evaluation
+    st.session_state['true_recommendations'] = []
 
 # User Authentication Page
 def show_login_page():
@@ -144,7 +143,7 @@ def show_main_interface():
            (p['discounted_price'] >= min_price and p['discounted_price'] <= max_price)
     ]
 
-    # Recommendation System with caching
+    # Recommendation System
     @st.cache_data
     def get_content_based_recommendations(user_history, num_recommendations=5):
         tfidf = TfidfVectorizer(stop_words='english')
@@ -195,30 +194,51 @@ def show_main_interface():
     # Display Recommendations at the Top
     recommendations = get_combined_recommendations()
     if recommendations:
-        st.markdown("### Recommended for You")
+        st.markdown("### Recommended for You:")
         for rec in recommendations:
-            st.write(rec)
+            st.write(f"- {rec}")
+            if rec not in st.session_state['true_recommendations']:
+                st.session_state['true_recommendations'].append(rec)
 
-    # Show filtered products
+    # Evaluation Metrics Section
+    if st.button("Evaluate Recommendations"):
+        if recommendations:
+            true_positive = len(set(st.session_state['true_recommendations']).intersection(set(recommendations)))
+            false_positive = len(set(recommendations) - set(st.session_state['true_recommendations']))
+            false_negative = len(set(st.session_state['true_recommendations']) - set(recommendations))
+
+            precision = true_positive / (true_positive + false_positive) if (true_positive + false_positive) > 0 else 0
+            recall = true_positive / (true_positive + false_negative) if (true_positive + false_negative) > 0 else 0
+            accuracy = true_positive / len(st.session_state['true_recommendations']) if len(st.session_state['true_recommendations']) > 0 else 0
+
+            st.success(f"Precision: {precision:.2f}, Recall: {recall:.2f}, Accuracy: {accuracy:.2f}")
+        else:
+            st.warning("No recommendations to evaluate.")
+
+    # Display Filtered Products
     if filtered_products:
         for product in filtered_products:
-            col1, col2 = st.columns([1, 1])
-            with col1:
-                st.image(product['product_image_url'], width=100)
-            with col2:
-                st.write(f"**{product['product_name']}**")
-                st.write(f"Price: ₹{product['discounted_price']}")
-                st.write(f"Rating: {product['rating']} ⭐")
-                if st.button("Add to Cart", key=product['product_name']):
-                    st.session_state['cart'].append({
-                        'product_name': product['product_name'],
-                        'discounted_price': product['discounted_price']
-                    })
-                    st.success(f"{product['product_name']} added to cart!")
-    else:
-        st.write("No products found for your search criteria.")
+            try:
+                col1, col2 = st.columns([1, 1])
+                with col1:
+                    st.image(product['product_image_url'], width=100)
+                with col2:
+                    st.write(f"**{product['product_name']}**")
+                    st.write(f"Price: ₹{product['discounted_price']}")
+                    st.write(f"Rating: {product['rating']} ⭐")
+                    if st.button("Add to Cart", key=product['product_name']):
+                        st.session_state['cart'].append({
+                            'product_name': product['product_name'],
+                            'discounted_price': product['discounted_price']
+                        })
+                        st.success(f"{product['product_name']} has been added to your cart.")
+            except KeyError as e:
+                st.error(f"Key error: {e}. Please check the product data.")
 
-# Streamlit Application Logic
+    else:
+        st.warning("No products found for your search criteria.")
+
+# Main Code Logic
 if st.session_state['user_logged_in']:
     show_main_interface()
 else:
