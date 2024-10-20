@@ -7,26 +7,21 @@ from sklearn.cluster import KMeans
 import numpy as np
 
 # Load product data from CSV with caching
-@st.cache_data(ttl=600)  # Cache for 10 minutes
-def load_data(file_path):
+@st.cache_data(ttl=600)
+def load_product_data(csv_file_path):
     try:
-        products = pd.read_csv(file_path)
+        products = pd.read_csv(csv_file_path)
         products['about_product'] = products['about_product'].fillna('')
         products['discounted_price'] = products['discounted_price'].str.replace('₹', '').str.replace(',', '').astype(float)
         products['rating'] = pd.to_numeric(products['rating'], errors='coerce').fillna(0)
         products['rating_count'] = pd.to_numeric(products['rating_count'], errors='coerce').fillna(0)
-
-        # Print the columns for debugging
-        print("Loaded DataFrame columns:", products.columns.tolist())
-        
         return products
     except FileNotFoundError:
         st.error("The products.csv file was not found. Please ensure it is in the correct directory.")
         st.stop()
 
-# Load products
 csv_file_path = 'products.csv'  # Ensure the CSV file is in the same directory or provide the correct path
-products = load_data(csv_file_path)
+products = load_product_data(csv_file_path)
 
 # Initialize session state
 if 'cart' not in st.session_state:
@@ -209,36 +204,34 @@ def show_main_interface():
             true_positive = len(set(st.session_state['true_recommendations']).intersection(set(recommendations)))
             false_positive = len(set(recommendations) - set(st.session_state['true_recommendations']))
             false_negative = len(set(st.session_state['true_recommendations']) - set(recommendations))
+
             precision = true_positive / (true_positive + false_positive) if (true_positive + false_positive) > 0 else 0
             recall = true_positive / (true_positive + false_negative) if (true_positive + false_negative) > 0 else 0
-            accuracy = true_positive / len(st.session_state['true_recommendations']) if st.session_state['true_recommendations'] else 0
+            accuracy = true_positive / len(recommendations) if recommendations else 0
 
+            st.markdown("### Evaluation Results:")
             st.write(f"**Precision:** {precision:.2f}")
             st.write(f"**Recall:** {recall:.2f}")
             st.write(f"**Accuracy:** {accuracy:.2f}")
-        else:
-            st.warning("No recommendations available for evaluation.")
 
     # Display Filtered Products
-    if not filtered_products:
-        st.warning("No products found matching your search criteria.")
-    else:
-        for product in filtered_products:
-            st.subheader(product['product_name'])
-            # Check if 'product_image' exists in the DataFrame
-            if 'product_image' in product:
-                st.image(product['product_image'], use_column_width=True)
-            else:
-                st.warning("Image not available for this product.")
-            st.write(f"Price: ₹{product['discounted_price']}")
-            st.write(f"Rating: {product['rating']} ({product['rating_count']} ratings)")
-            st.write(product['about_product'])
-            if st.button(f"Add to Cart", key=product['product_name']):
-                st.session_state['cart'].append(product)
-                st.success(f"{product['product_name']} added to cart!")
+    for product in filtered_products:
+        st.write(f"### {product['product_name']}")
+        st.write(f"**Price:** ₹{product['discounted_price']}")
+        st.write(f"**Rating:** {product['rating']} ({product['rating_count']} ratings)")
+        st.write(f"**About:** {product['about_product']}")
+        
+        if st.button(f"Add to Cart: {product['product_name']}"):
+            st.session_state['cart'].append({
+                'product_name': product['product_name'],
+                'discounted_price': product['discounted_price']
+            })
+            st.success(f"{product['product_name']} added to cart!")
 
-# Run the App
-if st.session_state['user_logged_in']:
-    show_main_interface()
-else:
+    show_purchase_history()
+
+# Main logic to run the application
+if not st.session_state['user_logged_in']:
     show_login_page()
+else:
+    show_main_interface()
