@@ -7,8 +7,9 @@ from sklearn.metrics import precision_score, recall_score, f1_score
 from sklearn.cluster import KMeans
 import numpy as np
 
-[ui]
-hide_streamlit_logo = true  # Hides Streamlit logo from the footer
+
+[theme]
+hide_streamlit_logo = true  # This hides the Streamlit logo
 
 
 
