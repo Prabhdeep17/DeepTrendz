@@ -6,6 +6,12 @@ from sklearn.metrics.pairwise import linear_kernel
 from sklearn.metrics import precision_score, recall_score, f1_score
 from sklearn.cluster import KMeans
 import numpy as np
+st.set_page_config(
+    page_title="DeepTrendz",  # Custom title for your page
+    page_icon="🛒",           # Optional icon for the page
+    layout="wide",            # Layout option (default is 'centered')
+    initial_sidebar_state="expanded"  # Sidebar state
+)
 
 # Load product data from CSV
 csv_file_path = 'products.csv'  # Ensure the CSV file is in the same directory or provide the correct path
