@@ -7,12 +7,6 @@ from sklearn.metrics import precision_score, recall_score, f1_score
 from sklearn.cluster import KMeans
 import numpy as np
 
-
-[theme]
-hide_streamlit_logo = true  # This hides the Streamlit logo
-
-
-
 st.set_page_config(
     page_title="DeepTrendz",  # Custom title for your page
     page_icon="🛒",           # Optional icon for the page
