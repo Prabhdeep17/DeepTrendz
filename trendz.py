@@ -4,8 +4,10 @@ import random
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import linear_kernel
 from sklearn.metrics import precision_score, recall_score, f1_score
+from sklearn.metrics import mean_absolute_error
+
 from sklearn.cluster import KMeans
-from sklearn.metrics import mean_squared_error
+
 import numpy as np
 
 # Load product data from CSV
@@ -72,16 +74,40 @@ def show_purchase_history():
     else:
         st.write("No purchase history available.")
 
+
 # Evaluate Recommendations
+
+import numpy as np
+from sklearn.metrics import precision_score, recall_score, f1_score, mean_squared_error
+
 def evaluate_recommendations(recommendations):
     # True labels: 1 if in purchase history, else 0
     true_labels = [1 if item in st.session_state['buy_history'] else 0 for item in recommendations]
     predicted_labels = [1] * len(recommendations)  # Assuming all recommended items are true recommendations
 
+    # Convert lists to numpy integer arrays for compatibility
+    true_labels = np.array(true_labels, dtype=int)
+    predicted_labels = np.array(predicted_labels, dtype=int)
+
+    # Debugging: Print data types and shapes
+    print(f"True Labels: {true_labels} - Type: {true_labels.dtype}, Shape: {true_labels.shape}")
+    print(f"Predicted Labels: {predicted_labels} - Type: {predicted_labels.dtype}, Shape: {predicted_labels.shape}")
+
+    # Check that both arrays are non-empty and of the same length
+    if true_labels.size == 0 or predicted_labels.size == 0:
+        st.warning("Error: True and Predicted labels are empty.")
+        mse = 0
+    elif true_labels.shape != predicted_labels.shape:
+        st.warning("Error: True and Predicted labels have mismatched lengths.")
+        mse = 0
+    else:
+        # Calculate Mean Squared Error
+        mse = mean_absolute_error(true_labels, predicted_labels)
+
+    # Calculate other metrics
     precision = precision_score(true_labels, predicted_labels, zero_division=1)
     recall = recall_score(true_labels, predicted_labels, zero_division=1)
     f1 = f1_score(true_labels, predicted_labels, zero_division=1)
-    mse = mean_squared_error(true_labels, predicted_labels)
 
     # Calculate Mean Reciprocal Rank (MRR)
     reciprocal_ranks = [1 / (rank + 1) for rank, label in enumerate(true_labels) if label == 1]
@@ -95,7 +121,7 @@ def evaluate_recommendations(recommendations):
         'mse': mse,
         'mrr': mrr,
     }
-    
+
     # Display evaluation metrics
     st.markdown("### Evaluation Metrics")
     st.write(f"**Precision:** {precision:.2f}")
@@ -103,7 +129,6 @@ def evaluate_recommendations(recommendations):
     st.write(f"**F1 Score:** {f1:.2f}")
     st.write(f"**Mean Squared Error (MSE):** {mse:.2f}")
     st.write(f"**Mean Reciprocal Rank (MRR):** {mrr:.2f}")
-
 # Main E-commerce Interface
 def show_main_interface():
     st.sidebar.header("User Menu")
@@ -198,101 +223,85 @@ def show_main_interface():
         if st.sidebar.button("Buy Now"):
             if cart_items:
                 for item, details in cart_items.items():
-                    st.session_state['buy_history'].append(item)
-                st.sidebar.success("Purchase successful!")
-                st.session_state['cart'] = []  # Clear the cart after purchase
+                    for _ in range(details['quantity']):
+                        st.session_state['buy_history'].append(item)
+                st.sidebar.success("Order confirmed! Thank you for your purchase.")
+                st.session_state['cart'] = []
             else:
-                st.warning("Your cart is empty.")
+                st.sidebar.warning("You haven't selected anything to buy.")
     else:
-        st.sidebar.write("Your cart is empty.")
+        st.sidebar.info("Your cart is empty. Add some products to proceed.")
 
-# Generate Recommendations based on purchase and browse history
-def generate_recommendations():
-    if st.session_state['buy_history']:
-        # Create a combined user history
-        user_history = st.session_state['buy_history'] + st.session_state['browse_history']
-        unique_history = list(set(user_history))  # Remove duplicates
+    # Recommendation System
+    def get_content_based_recommendations(user_history, num_recommendations=5):
+        tfidf = TfidfVectorizer(stop_words='english')
+        tfidf_matrix = tfidf.fit_transform(products['about_product'])
+        cosine_sim = linear_kernel(tfidf_matrix, tfidf_matrix)
 
-        if unique_history:
-            # Create a TF-IDF matrix for the products in user history
-            tfidf = TfidfVectorizer()
-            tfidf_matrix = tfidf.fit_transform(products['about_product'].values)
+        indices = pd.Series(products.index, index=products['product_name']).drop_duplicates()
+        recommended_products = set()
 
-            # Calculate cosine similarities for the unique history products
-            cosine_sim = linear_kernel(tfidf_matrix, tfidf_matrix)
-
-            # Generate recommendations for each product in user history
-            recommendations = []
-            for product in unique_history:
-                idx = products[products['product_name'] == product].index[0]
+        for title in user_history:
+            if title in indices.index:
+                idx = indices[title]
                 sim_scores = list(enumerate(cosine_sim[idx]))
+                sim_scores = [(i, score) for i, score in sim_scores if score is not None and (isinstance(score, float) and not np.isnan(score))]
                 sim_scores = sorted(sim_scores, key=lambda x: x[1], reverse=True)
-                top_indices = [i[0] for i in sim_scores[1:6]]  # Get top 5 similar products
-                recommendations += products['product_name'].iloc[top_indices].tolist()
+                sim_scores = sim_scores[1:num_recommendations + 1]
+                product_indices = [i[0] for i in sim_scores]
+                recommended_products.update(products['product_name'].iloc[product_indices])
 
-            recommendations = list(set(recommendations))  # Remove duplicates
-            st.session_state['true_recommendations'] = recommendations  # Store true recommendations for evaluation
-            return recommendations
-        else:
-            st.warning("No purchase or browse history to generate recommendations.")
+        return list(recommended_products)
+
+    def get_collaborative_recommendations(user_history, num_recommendations=5):
+        if len(st.session_state['buy_history']) < 2:
             return []
-    else:
-        st.warning("No purchase history available.")
-        return []
 
-# KMeans clustering based recommendations
-def kmeans_recommendations():
-    user_history = st.session_state['buy_history']
-    
-    if len(user_history) > 1:  # Ensure at least 2 products for KMeans
-        user_vector = np.array([products[products['product_name'] == item]['discounted_price'].values[0] for item in user_history if item in products['product_name'].values])
-        if len(user_vector) > 1:
-            kmeans = KMeans(n_clusters=min(len(user_vector), 3))  # At least 2 clusters
-            kmeans.fit(user_vector.reshape(-1, 1))
-            return [products.iloc[i].product_name for i in kmeans.labels_]
-        else:
-            st.warning("Insufficient unique items for clustering.")
-            return []
-    else:
-        st.warning("At least two products are needed for KMeans clustering.")
-        return []
+        user_vector = np.zeros(len(products))
+        for item in user_history:
+            if item in products['product_name'].values:
+                idx = products[products['product_name'] == item].index[0]
+                user_vector[idx] += 1
 
-# Main function
-if st.session_state['user_logged_in']:
-    show_main_interface()
+        kmeans = KMeans(n_clusters=2)
+        kmeans.fit(user_vector.reshape(-1, 1))
+        cluster_label = kmeans.predict(user_vector.reshape(-1, 1))
 
-    # Button to generate recommendations
-    if st.sidebar.button("Get Recommendations"):
-        st.sidebar.success("Scroll down to see the recommendations")
-        recommendations = generate_recommendations()
-        if recommendations:
-            st.write("### Recommendations based on your history:")
-            for item in recommendations:
-                # Find the product in the DataFrame
-                product_row = products[products['product_name'] == item]
-                if not product_row.empty:
-                    product_image = product_row['img_link'].values[0]  # Get the image link
-                    discounted_price = product_row['discounted_price'].values[0]  # Get the discounted price
-                    st.image(product_image, width=150)  # Display the image
-                    st.write(f"**{item}**")
-                    st.write(f"Discounted Price: ₹{discounted_price}")
+        similar_users = np.where(kmeans.labels_ == cluster_label)[0]
+        recommended_products = []
 
-            # Evaluate recommendations if purchase history exists
-            if st.session_state['buy_history']:
+        for user_index in similar_users:
+            user_items = st.session_state['buy_history']  # This assumes buy history includes what other users bought.
+            recommended_products.extend(user_items)
+
+        return list(set(recommended_products))
+
+    def get_combined_recommendations():
+        user_history = st.session_state['buy_history'] + st.session_state['search_history']
+        content_recommendations = get_content_based_recommendations(user_history)
+        collaborative_recommendations = get_collaborative_recommendations(user_history)
+
+        combined_recommendations = list(set(content_recommendations) | set(collaborative_recommendations))
+        return combined_recommendations
+
+    if st.sidebar.button("Show Recommendations"):
+        if st.session_state['user_logged_in']:
+            recommendations = get_combined_recommendations()
+            st.session_state['true_recommendations'] = recommendations  # Store true recommendations in session state
+            st.markdown("### Recommended Products")
+            if recommendations:
+                for product in recommendations:
+                    product_details = products[products['product_name'] == product].iloc[0]
+                    st.write(f"**{product_details['product_name']}** - ₹{product_details['discounted_price']}")
+                    st.image(product_details['img_link'], width=150)
                 evaluate_recommendations(recommendations)
+            else:
+                st.warning("No recommendations found.")
+        else:
+            st.warning("You need to be logged in to see recommendations.")
 
-            # KMeans Recommendations
-            kmeans_recs = kmeans_recommendations()
-            if kmeans_recs:
-                st.write("### KMeans Recommendations:")
-                for item in kmeans_recs:
-                    # Find the product in the DataFrame
-                    product_row = products[products['product_name'] == item]
-                    if not product_row.empty:
-                        product_image = product_row['img_link'].values[0]  # Get the image link
-                        discounted_price = product_row['discounted_price'].values[0]  # Get the discounted price
-                        st.image(product_image, width=150)  # Display the image
-                        st.write(f"**{item}**")
-                        st.write(f"Discounted Price: ₹{discounted_price}")
-else:
+# Main application logic
+if not st.session_state['user_logged_in']:
     show_login_page()
+else:
+    show_main_interface()
